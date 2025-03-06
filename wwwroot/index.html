@@ -1,0 +1,301 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Quiz Application</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-size: 18px;
+        }
+
+        .quiz-container {
+            max-width: 800px;
+            margin: 20px auto;
+        }
+
+        .quiz-header {
+            margin-bottom: 20px;
+        }
+
+        .question-card {
+            margin-bottom: 20px;
+        }
+
+        .nav-buttons {
+            margin-top: 20px;
+        }
+        /* Powiększenie pól wyboru */
+        .form-check-input {
+            width: 1.5em;
+            height: 1.5em;
+            margin-top: 0.3em;
+        }
+        /* Powiększenie etykiet */
+        .form-check-label {
+            font-size: 1.2em;
+            margin-left: 0.5em;
+        }
+        /* Czcionka pytania na 20px */
+        .card-text {
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container quiz-container">
+        <div class="quiz-header text-center">
+            <h1>Quiz Application</h1>
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <label for="displayMode" class="form-label">Display Mode:</label>
+                    <select id="displayMode" class="form-select">
+                        <option value="sequential" selected>Sequential</option>
+                        <option value="random">Random</option>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label for="questionNumberInput" class="form-label">Go to question (number):</label>
+                    <div class="input-group">
+                        <input type="number" id="questionNumberInput" class="form-control" min="1" placeholder="Number">
+                        <button id="goButton" class="btn btn-primary">Go</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quiz display area -->
+        <div id="quizContainer"></div>
+
+        <!-- Navigation buttons -->
+        <div class="d-flex justify-content-between nav-buttons">
+            <button id="prevButton" class="btn btn-secondary">Previous</button>
+            <button id="checkButton" class="btn btn-warning">Check Current Answer</button>
+            <button id="nextButton" class="btn btn-secondary">Next</button>
+            <button id="finishButton" class="btn btn-success">Finish Quiz</button>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS bundle (includes Popper) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    let questions = [];
+    let currentIndex = 0;
+    let userResponses = {}; // Klucz: questionId, wartość: tablica wybranych odpowiedzi (ID)
+    const labels = ["A", "B", "C", "D", "E"]; // Litery przypisywane kolejno
+
+    // Fetch questions from API based on selected display mode
+    function fetchQuestions() {
+      const mode = document.getElementById("displayMode").value;
+      const url = `/api/Questions?random=${mode === "random"}`;
+      fetch(url)
+        .then(response => response.json())
+        .then(data => {
+          questions = data;
+          currentIndex = 0;
+          userResponses = {};
+          showQuestion(currentIndex);
+        })
+        .catch(error => console.error("Error fetching questions:", error));
+    }
+
+    // Save current response for current question
+    function saveCurrentResponse() {
+      if (!questions || questions.length === 0) return;
+      const q = questions[currentIndex];
+      const form = document.getElementById("answerForm");
+      if (!form) return;
+      let selected = [];
+      if (form.elements["answer"]) {
+        if (form.elements["answer"].type === "radio") {
+          const radios = form.elements["answer"];
+          for (let radio of radios) {
+            if (radio.checked) {
+              selected.push(parseInt(radio.value));
+            }
+          }
+        } else {
+          const checkboxes = form.querySelectorAll("input[name='answer']");
+          checkboxes.forEach(chk => {
+            if (chk.checked) {
+              selected.push(parseInt(chk.value));
+            }
+          });
+        }
+      }
+      userResponses[q.questionId] = selected;
+    }
+
+    // Display question at given index
+    function showQuestion(index) {
+      const container = document.getElementById("quizContainer");
+      if (!questions || questions.length === 0) {
+        container.innerHTML = "<div class='alert alert-info'>No questions available.</div>";
+        return;
+      }
+      if (index < 0) index = 0;
+      if (index >= questions.length) index = questions.length - 1;
+      currentIndex = index;
+
+      const q = questions[index];
+      let html = `
+        <div class="card question-card">
+          <div class="card-header">
+            <h2>Question ${index + 1} of ${questions.length}</h2>
+          </div>
+          <div class="card-body">
+            <p class="card-text">${q.questionText}</p>
+            <form id="answerForm">
+      `;
+      q.answers.forEach((answer, i) => {
+        const letter = labels[i] || "?";
+        const inputType = (q.questionType === "MULTIPLE") ? "checkbox" : "radio";
+        html += `
+          <div class="form-check">
+            <input class="form-check-input" type="${inputType}" name="answer" value="${answer.answerId}" id="answer${answer.answerId}">
+            <label class="form-check-label" for="answer${answer.answerId}">
+              ${letter}. ${answer.answerText}
+            </label>
+          </div>
+        `;
+      });
+      html += `
+            </form>
+          </div>
+        </div>
+      `;
+      container.innerHTML = html;
+      // Restore previous response if exists
+      if(userResponses[q.questionId]) {
+          const form = document.getElementById("answerForm");
+          const selections = userResponses[q.questionId];
+          const inputs = form.querySelectorAll("input[name='answer']");
+          inputs.forEach(input => {
+              if (selections.includes(parseInt(input.value))) {
+                  input.checked = true;
+              }
+          });
+      }
+    }
+
+    // Check current question answer
+    function checkAnswer() {
+      const q = questions[currentIndex];
+      const form = document.getElementById("answerForm");
+      let selected = [];
+      let mapping = {};
+      q.answers.forEach((ans, i) => {
+        const letter = labels[i] || "?";
+        mapping[ans.answerId] = letter;
+      });
+
+      if (form.elements["answer"].type === "radio") {
+        const radios = form.elements["answer"];
+        for (let radio of radios) {
+          if (radio.checked) {
+            selected.push(parseInt(radio.value));
+          }
+        }
+      } else {
+        const checkboxes = form.querySelectorAll("input[name='answer']");
+        checkboxes.forEach(chk => {
+          if (chk.checked) {
+            selected.push(parseInt(chk.value));
+          }
+        });
+      }
+
+      userResponses[q.questionId] = selected;
+
+      fetch("/api/Questions/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          questionId: q.questionId,
+          selectedAnswers: selected
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.isCorrect) {
+          alert("Correct answer for current question!");
+        } else {
+          const correctLetters = data.correctAnswerIds.map(id => mapping[id] || id).join(", ");
+          alert("Incorrect answer for current question! Correct answers: " + correctLetters);
+        }
+      })
+      .catch(error => console.error("Error checking answer:", error));
+    }
+
+    // Check all answers and display comprehensive report
+    function checkAllAnswers() {
+      saveCurrentResponse();
+      let responses = [];
+      for (const [questionId, selected] of Object.entries(userResponses)) {
+        responses.push({ questionId: parseInt(questionId), selectedAnswers: selected });
+      }
+      fetch("/api/Questions/checkAll", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ responses: responses })
+      })
+      .then(response => response.json())
+      .then(data => {
+        let reportHtml = `<h2>Quiz Results</h2>`;
+        reportHtml += `<p>Correct: ${data.correctCount} / ${data.totalQuestions} answered (${data.incorrectCount} incorrect)</p><hr/>`;
+        data.reports.forEach(report => {
+          reportHtml += `<div class="mb-3">`;
+          reportHtml += `<strong>Question ${report.questionId}: ${report.questionText}</strong><br>`;
+          if (report.isCorrect) {
+            reportHtml += `<span class="text-success">Correct</span>`;
+          } else {
+            reportHtml += `<span class="text-danger">Incorrect. Correct answers: ${report.correctAnswerLetters}</span><br>`;
+            reportHtml += `<em>Explanation: ${report.explanation}</em>`;
+          }
+          reportHtml += `</div>`;
+        });
+        document.getElementById("quizContainer").innerHTML = reportHtml;
+      })
+      .catch(error => console.error("Error checking all answers:", error));
+    }
+
+    // Navigation events
+    document.getElementById("nextButton").addEventListener("click", () => {
+      saveCurrentResponse();
+      if (currentIndex < questions.length - 1) {
+        currentIndex++;
+        showQuestion(currentIndex);
+      }
+    });
+
+    document.getElementById("prevButton").addEventListener("click", () => {
+      saveCurrentResponse();
+      if (currentIndex > 0) {
+        currentIndex--;
+        showQuestion(currentIndex);
+      }
+    });
+
+    document.getElementById("goButton").addEventListener("click", () => {
+      saveCurrentResponse();
+      const num = parseInt(document.getElementById("questionNumberInput").value);
+      if (!isNaN(num) && num > 0 && num <= questions.length) {
+        currentIndex = num - 1;
+        showQuestion(currentIndex);
+      } else {
+        alert("Please enter a valid question number (from 1 to " + questions.length + ").");
+      }
+    });
+
+    document.getElementById("checkButton").addEventListener("click", checkAnswer);
+    document.getElementById("finishButton").addEventListener("click", checkAllAnswers);
+    document.getElementById("displayMode").addEventListener("change", fetchQuestions);
+
+    // Initial fetch of questions
+    fetchQuestions();
+    </script>
+</body>
+</html>
